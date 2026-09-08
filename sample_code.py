@@ -7,13 +7,13 @@ ticker_list = ["AAPL", "MSFT", "AMZN", "GOOGL"]
 all_earnings_data = []
 
 for ticker in ticker_list:
-    print(f"\n===== Processing {ticker} =====")
+    print(f"\n===== 正在處理 {ticker} =====")
     stock = yf.Ticker(ticker)
 
     # 取得財報日期與EPS數據
     earnings = stock.get_earnings_dates()
     if earnings is None or len(earnings) == 0:
-        print(f"{ticker} unable to obtain data, skip to the next ticket")
+        print(f"{ticker} 無法取得財報數據，跳過該股票")
         continue
 
     # 印出當前欄位名，方便除錯
@@ -32,7 +32,7 @@ for ticker in ticker_list:
     price_df = stock.history(start=start_date, end=end_date)
 
     if len(price_df) == 0:
-        print(f"{ticker} unable to obtain data, skip to the next ticket")
+        print(f"{ticker} 無法取得股價數據，跳過")
         continue
 
     # 計算盈餘驚喜率 (實際EPS - 預期EPS) / 預期EPS
@@ -44,7 +44,7 @@ for ticker in ticker_list:
 # 合併全部股票數據
 if len(all_earnings_data) > 0:
     total_df = pd.concat(all_earnings_data)
-    print("\n=== finish combining，first five data ===")
+    print("\n=== 合併完成，前5筆數據 ===")
     print(total_df.head())
 
     # 畫圖：盈餘驚喜率分布
@@ -54,7 +54,7 @@ if len(all_earnings_data) > 0:
         plt.hist(sub["surprise_pct"], alpha=0.5, label=tick, bins=15)
 
     plt.title("Earnings Surprise Percentage Distribution")
-    plt.xlabel("Surprise % (Suprise)")
+    plt.xlabel("Surprise % (盈餘驚喜率)")
     plt.ylabel("Count")
     plt.legend()
     plt.grid(alpha=0.3)
@@ -62,4 +62,4 @@ if len(all_earnings_data) > 0:
     plt.show()
 
 else:
-    print("No data")
+    print("沒有拿到任何有效財報數據")
