@@ -2,73 +2,64 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Parameters
-tickers = ["AAPL", "MSFT", "GOOG", "AMZN", "META"]
-window_before = 5
-window_after = 10
+# 設定要分析的股票清單，可自行增減
+ticker_list = ["AAPL", "MSFT", "AMZN", "GOOGL"]
+all_earnings_data = []
 
-all_records = []
-
-for ticker in tickers:
+for ticker in ticker_list:
+    print(f"\n===== Processing {ticker} =====")
     stock = yf.Ticker(ticker)
-    earnings = stock.earnings_dates
+
+    # 取得財報日期與EPS數據
+    earnings = stock.get_earnings_dates()
     if earnings is None or len(earnings) == 0:
+        print(f"{ticker} unable to obtain data, skip to the next ticket")
         continue
 
-    price = yf.download(ticker, period="5y")["Close"]
-    earnings = earnings.dropna(subset=["EPS Actual", "EPS Estimate"])
-    earnings["surprise_pct"] = (earnings["EPS Actual"] - earnings["EPS Estimate"]) / earnings["EPS Estimate"]
+    # 印出當前欄位名，方便除錯
+    print(f"{ticker} 資料欄位：{earnings.columns.tolist()}")
 
-    for idx, row in earnings.iterrows():
-        earn_date = idx
-        start = earn_date - pd.Timedelta(days=window_before + 5)
-        end = earn_date + pd.Timedelta(days=window_after + 5)
-        sub_price = price.loc[start:end]
-        if len(sub_price) < window_before + window_after:
-            continue
+    # ✅ 相容新舊版 yfinance 欄位名稱
+    col_eps_actual = "EPSActual" if "EPSActual" in earnings.columns else "EPS Actual"
+    col_eps_estimate = "EPSEstimate" if "EPSEstimate" in earnings.columns else "EPS Estimate"
 
-        sub_price = sub_price.reset_index()
-        earn_pos = (sub_price["Date"] - earn_date).abs().idxmin()
-        if earn_pos - window_before < 0 or earn_pos + window_after >= len(sub_price):
-            continue
+    # 移除空值列
+    earnings = earnings.dropna(subset=[col_eps_actual, col_eps_estimate])
 
-        base_price = sub_price.iloc[earn_pos - window_before]["Close"]
-        ret_series = sub_price.loc[earn_pos - window_before: earn_pos + window_after]["Close"] / base_price - 1
+    # 取得股價資料，時間範圍對應財報時間
+    start_date = earnings.index.min()
+    end_date = earnings.index.max()
+    price_df = stock.history(start=start_date, end=end_date)
 
-        record = {
-            "ticker": ticker,
-            "surprise_pct": row["surprise_pct"],
-            "ret_series": ret_series.values
-        }
-        all_records.append(record)
-
-df_records = pd.DataFrame(all_records)
-
-# 分組 beat / miss / in‑line
-def group_surprise(x):
-    if x > 0.05:
-        return "beat"
-    elif x < -0.05:
-        return "miss"
-    else:
-        return "in_line"
-
-df_records["group"] = df_records["surprise_pct"].apply(group_surprise)
-
-# plot graph
-plt.figure(figsize=(10, 6))
-for g in ["beat", "miss", "in_line"]:
-    subset = df_records[df_records["group"] == g]
-    if len(subset) == 0:
+    if len(price_df) == 0:
+        print(f"{ticker} unable to obtain data, skip to the next ticket")
         continue
-    arr = list(subset["ret_series"])
-    avg = pd.DataFrame(arr).mean(axis=0)
-    plt.plot(avg.values, label=g)
 
-plt.legend()
-plt.title("Cumulative return around earnings announcement")
-plt.xlabel("trading days relative to earnings date")
-plt.ylabel("cumulative return")
-plt.tight_layout()
-plt.savefig("earnings_return_chart.png")
-plt.show()
+    # 計算盈餘驚喜率 (實際EPS - 預期EPS) / 預期EPS
+    earnings["surprise_pct"] = (earnings[col_eps_actual] - earnings[col_eps_estimate]) / earnings[col_eps_estimate]
+
+    earnings["ticker"] = ticker
+    all_earnings_data.append(earnings)
+
+# 合併全部股票數據
+if len(all_earnings_data) > 0:
+    total_df = pd.concat(all_earnings_data)
+    print("\n=== finish combining，first five data ===")
+    print(total_df.head())
+
+    # 畫圖：盈餘驚喜率分布
+    plt.figure(figsize=(10, 6))
+    for tick in ticker_list:
+        sub = total_df[total_df["ticker"] == tick]
+        plt.hist(sub["surprise_pct"], alpha=0.5, label=tick, bins=15)
+
+    plt.title("Earnings Surprise Percentage Distribution")
+    plt.xlabel("Surprise % (Suprise)")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("No data")
